@@ -6,9 +6,11 @@ Auteur : Aurélien Vauthier (19 126 456)
 """
 
 # %%
-import sklearn
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from scipy.spatial.distance import cdist
+from tqdm import tqdm
 import numpy as np
-import scipy as sp
 import pandas as pd
 # %matplotlib notebook
 import matplotlib.pyplot as plt
@@ -50,7 +52,15 @@ plus représentés que d’autres. Pour pallier à cela, filter les données pou
 """
 
 # %%
+# Convert data array to DataFrame and append targets
+data = pd.DataFrame(faces.data)
+data["target"] = faces.target
 
+# keep the first 40 data for each target
+data = data.groupby("target").head(40)
+
+# show results
+data.head()
 
 # %%
 """
@@ -59,7 +69,13 @@ en utilisant le modèle `PCA()` de `sklearn` avec les options `whiten=True` et `
 """
 
 # %%
+pca = PCA(100, whiten=True, random_state=0)
 
+pca_data = pca.fit_transform(data.drop("target", axis=1))
+data = pd.concat([pd.DataFrame(pca_data), data["target"]], axis=1)
+
+# show results
+data.head()
 
 # %%
 """
@@ -74,6 +90,30 @@ résultat et donner vos conclusions.*
 """
 
 # %%
+# https://www.geeksforgeeks.org/elbow-method-for-optimal-value-of-k-in-kmeans/
+Ks = range(40, 81, 5)
+mean_min_dists = []
+
+for k in tqdm(Ks, desc="Computing mean of min distances to closest centroid..."):
+    kmean = KMeans(n_clusters=k, n_jobs=-1)
+    kmean.fit(pca_data)
+
+    distances = cdist(pca_data, kmean.cluster_centers_, "euclidean")
+    mean_min_dist = np.mean(np.min(distances, axis=1))
+    mean_min_dists.append(mean_min_dist)
+
+plt.plot(Ks, mean_min_dists, 'bx-')
+plt.xlabel("Nombre de cluster K")
+plt.ylabel("Moyenne des distances")
+plt.title("Moyennes des distances des données à leur plus proche centre par rapport au nombre de cluster")
+plt.show()
+
+# %%
+"""
+D'après les résultats du graphique ci-dessus, nous pouvons constater que le nombre de cluster optimal ne semble pas
+pouvoir être deviné par la méthode du coude. En effet, nous n'observons pas ici de "coude", la distance moyenne des
+données au centre le plus proche décroit de façon linéaire avec l'augmentation du nombre de cluster. 
+"""
 
 # %%
 """
@@ -84,6 +124,7 @@ résultat et donner vos conclusions.*
 """
 
 # %%
+
 
 # %%
 """
@@ -96,6 +137,7 @@ de chaque donnée `eps`) pour la méthode DBSCAN avec `min_samples` dans l’int
 """
 
 # %%
+
 
 # %%
 """
@@ -110,9 +152,3 @@ l’arrière plan, le port de lunette, etc. Lister vos conclusions pour chaque v
 
 # %%
 
-# %%
-"""
-**
-"""
-
-# %%
