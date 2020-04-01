@@ -7,8 +7,11 @@ Auteur : Aurélien Vauthier (19 126 456)
 
 # %%
 from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from scipy.spatial.distance import cdist
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import adjusted_rand_score, make_scorer, silhouette_score
+from sklearn.model_selection import GridSearchCV
+from scipy.spatial.distance import cdist, pdist, squareform
+from itertools import product
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -71,8 +74,9 @@ en utilisant le modèle `PCA()` de `sklearn` avec les options `whiten=True` et `
 # %%
 pca = PCA(100, whiten=True, random_state=0)
 
-pca_data = pca.fit_transform(data.drop("target", axis=1))
-data = pd.concat([pd.DataFrame(pca_data), data["target"]], axis=1)
+X = pca.fit_transform(data.drop("target", axis=1))
+y = data["target"]
+data = pd.concat([pd.DataFrame(X), y], axis=1)
 
 # show results
 data.head()
@@ -96,9 +100,9 @@ mean_min_dists = []
 
 for k in tqdm(Ks, desc="Computing mean of min distances to closest centroid..."):
     kmean = KMeans(n_clusters=k, n_jobs=-1)
-    kmean.fit(pca_data)
+    kmean.fit(X)
 
-    distances = cdist(pca_data, kmean.cluster_centers_, "euclidean")
+    distances = cdist(X, kmean.cluster_centers_, "euclidean")
     mean_min_dist = np.mean(np.min(distances, axis=1))
     mean_min_dists.append(mean_min_dist)
 
@@ -112,7 +116,9 @@ plt.show()
 """
 D'après les résultats du graphique ci-dessus, nous pouvons constater que le nombre de cluster optimal ne semble pas
 pouvoir être deviné par la méthode du coude. En effet, nous n'observons pas ici de "coude", la distance moyenne des
-données au centre le plus proche décroit de façon linéaire avec l'augmentation du nombre de cluster. 
+données au centre le plus proche décroit de façon linéaire avec l'augmentation du nombre de cluster. Cela pourrait être
+dû à la [malédiction de la dimensionnalité](https://fr.wikipedia.org/wiki/Fl%C3%A9au_de_la_dimension). En effet, on peut
+constater que lorsque le nombre de dimension augmente la distance entre les points tend à s'uniformiser.
 """
 
 # %%
@@ -124,7 +130,29 @@ résultat et donner vos conclusions.*
 """
 
 # %%
+model = KMeans(n_jobs=-1)
+param_grid = {
+    "n_clusters": Ks
+}
 
+# convert metric to scorer
+scorer_ARI = make_scorer(adjusted_rand_score)
+
+best_kmean = GridSearchCV(model, param_grid, cv=10, scoring=scorer_ARI, n_jobs=-1, verbose=1)
+best_kmean.fit(X, y)
+
+print(f"Best k fond : {best_kmean.best_params_['n_clusters']}")
+
+plt.plot(Ks, best_kmean.cv_results_["mean_test_score"], 'bx-')
+plt.xlabel("Nombre de cluster K")
+plt.ylabel("Moyenne des scores")
+plt.title("Moyennes des scores en fonction du nombre de cluster")
+plt.show()
+
+# %%
+"""
+Test
+"""
 
 # %%
 """
@@ -137,6 +165,29 @@ de chaque donnée `eps`) pour la méthode DBSCAN avec `min_samples` dans l’int
 """
 
 # %%
+model = DBSCAN(n_jobs=-1)
+param_grid = {
+    "min_samples": range(11),
+    "eps": range(5, 16)
+}
+distances = squareform(pdist(X))
+
+best_dbscan = None
+best_dbscan_score = 0
+best_dbscan_params = None
+for eps, min_samples in product(range(5, 16), range(11)):
+    dbscan = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1)
+    predict = dbscan.fit_predict(X, y)
+
+    score = silhouette_score(distances, predict) if len(np.unique(predict)) != 1 else 0
+
+    if score > best_dbscan_score:
+        best_dbscan_score = score
+        best_dbscan = dbscan
+        best_dbscan_params = (eps, min_samples)
+
+print(f"Best eps = {best_dbscan_params[0]}, best min_samples = {best_dbscan_params[1]}")
+print(f"Number of cluster found : {len(best_dbscan.classes_) - 1}")
 
 
 # %%
