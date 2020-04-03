@@ -9,7 +9,7 @@ Auteur : Aurélien Vauthier (19 126 456)
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import adjusted_rand_score, make_scorer, silhouette_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from scipy.spatial.distance import cdist, pdist, squareform
 from itertools import product
 from tqdm import tqdm
@@ -99,7 +99,7 @@ Ks = range(40, 81, 5)
 mean_min_dists = []
 
 for k in tqdm(Ks, desc="Computing mean of min distances to closest centroid..."):
-    kmean = KMeans(n_clusters=k, n_jobs=-1)
+    kmean = KMeans(n_clusters=k, n_jobs=-1, random_state=0)
     kmean.fit(X)
 
     distances = cdist(X, kmean.cluster_centers_, "euclidean")
@@ -114,11 +114,14 @@ plt.show()
 
 # %%
 """
-D'après les résultats du graphique ci-dessus, nous pouvons constater que le nombre de cluster optimal ne semble pas
-pouvoir être deviné par la méthode du coude. En effet, nous n'observons pas ici de "coude", la distance moyenne des
-données au centre le plus proche décroit de façon linéaire avec l'augmentation du nombre de cluster. Cela pourrait être
-dû à la [malédiction de la dimensionnalité](https://fr.wikipedia.org/wiki/Fl%C3%A9au_de_la_dimension). En effet, on peut
-constater que lorsque le nombre de dimension augmente la distance entre les points tend à s'uniformiser.
+D'après les résultats du graphique ci-dessus, nous pouvons observer deux faible "coudes" autour des valeurs 55/60 et de
+la valeur 75. Nous pourrions donc tenter de regarder les clusters formés à ces valeurs manuellement pour vérifier leur
+potentiel.
+
+Nous pouvons expliquer ces faibles résultats par la
+[malédiction de la dimensionnalité](https://fr.wikipedia.org/wiki/Fl%C3%A9au_de_la_dimension). En effet, on peut
+constater que lorsque le nombre de dimensions augmente la distance entre les points tend à s'uniformiser. Cela rend
+ainsi les calculs de distances moins performant, moins significatif.
 """
 
 # %%
@@ -130,7 +133,7 @@ résultat et donner vos conclusions.*
 """
 
 # %%
-model = KMeans(n_jobs=-1)
+model = KMeans(n_jobs=-1, random_state=0)
 param_grid = {
     "n_clusters": Ks
 }
@@ -138,7 +141,8 @@ param_grid = {
 # convert metric to scorer
 scorer_ARI = make_scorer(adjusted_rand_score)
 
-best_kmean = GridSearchCV(model, param_grid, cv=10, scoring=scorer_ARI, n_jobs=-1, verbose=1)
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
+best_kmean = GridSearchCV(model, param_grid, cv=cv, scoring=scorer_ARI, n_jobs=-1, verbose=1)
 best_kmean.fit(X, y)
 
 print(f"Best k fond : {best_kmean.best_params_['n_clusters']}")
@@ -151,9 +155,14 @@ plt.show()
 
 # %%
 """
-Nous pouvons remarquer que les résultats changent à chaque exécution et que ces résultats sont parfoit oscillant,
-rendant la précision de la validation croisée douteuse. Puisque nous utilisons ici un autre score mais que les résultats
-semble toujours aussi incertains, nous pouvons imaginer que c'est le modèle `KMeans` qui est inadapté à nos données.
+Nous pouvons remarquer que, si on retire le paramètre `random_state`, les résultats changent à chaque exécution et ces
+résultats sont parfois oscillants, rendant la précision de la validation croisée douteuse.
+
+Nous pouvons aussi noter que les potentiels meilleurs clustering sont cette fois-ci obtenus pour des valeurs de
+`n_clusters` à 40, 60 et 80 (ce dernier étant d'après notre mesure de score le meilleur clustering). Là encore, une
+vérification manuelle de la sémantique des clusters formés serait nécessaire pour les évaluer plus précisément.
+
+Ces résultats semblent donc confirmer la difficulté de classifier ces données. 
 """
 
 # %%
@@ -174,8 +183,10 @@ eps_list = range(5, 16)
 min_samples_list = range(11)
 
 scores = []
+n_clusters = []
 best_dbscan = None
 best_dbscan_score = 0
+best_dbscan_n_cluster = 0
 best_dbscan_params = None
 for eps, min_samples in tqdm(product(eps_list, min_samples_list), total=len(eps_list)*len(min_samples_list),
                              desc="Searching best eps and min_samples for DBSCAN"):
@@ -183,28 +194,53 @@ for eps, min_samples in tqdm(product(eps_list, min_samples_list), total=len(eps_
     predict = dbscan.fit_predict(X, y)
 
     score = silhouette_score(distances, predict) if len(np.unique(predict)) > 1 else 0  # if only noise found, score = 0
+    n_cluster = len(np.unique(dbscan.labels_)) - (1 if -1 in dbscan.labels_ else 0)   # we don't count noise
 
     scores.append(score)
+    n_clusters.append(n_cluster)
     if score > best_dbscan_score:
         best_dbscan_score = score
         best_dbscan = dbscan
         best_dbscan_params = (eps, min_samples)
+        best_dbscan_n_cluster = n_cluster
 
 print(f"Best eps = {best_dbscan_params[0]}, best min_samples = {best_dbscan_params[1]}")
-print(f"Number of cluster(s) found : {len(np.unique(best_dbscan.labels_)) - (1 if -1 in best_dbscan.labels_ else 0)}")
+print(f"Number of cluster(s) for the best model : {best_dbscan_n_cluster}")
 
-scores = np.reshape(scores, (len(eps_list), len(min_samples_list)))
-sns.heatmap(scores, xticklabels=min_samples_list, yticklabels=eps_list)
-plt.xlabel("min_samples")
-plt.ylabel("eps")
-plt.show()
+def plot_heatmap_of_hyperparam(values, title, annot=False):
+    values = np.reshape(values, (len(eps_list), len(min_samples_list)))
+    sns.heatmap(values, xticklabels=min_samples_list, yticklabels=eps_list, annot=annot)
+    plt.suptitle(title)
+    plt.xlabel("min_samples")
+    plt.ylabel("eps")
+    plt.show()
+
+
+# plot scores heat map
+plot_heatmap_of_hyperparam(scores, "Scores en fonction des hyperparamètres")
+
+# plot n_clusters heat map
+plot_heatmap_of_hyperparam(n_clusters, "N_clusters en fonction des hyperparamètres")
+
+# plot n_clusters heat map for values less  than 100
+n_clusters = np.where(np.array(n_clusters) < 100, n_clusters, np.nan)
+plot_heatmap_of_hyperparam(n_clusters, "N_clusters (valeurs < 100) en fonction des hyperparamètres", annot=True)
 
 # %%
 """
-D'après les résultats du graph ci-dessus, on peut remarquer que les meilleurs scores de silhouette sont obtenu pour un
+D'après les résultats ci-dessus, on peut remarquer que les meilleurs scores de silhouette sont obtenu pour un
 `eps` élevé et un `min_sample` moyen à élevé. Nous pouvons ainsi déduire de ces résultats que les meilleurs clusters au
-sens du coéfficient de silhouette sont les plus gros. Il semble aussi que les valeurs de score soient plus sensible aux
+sens du coefficient de silhouette sont les plus gros. Il semble aussi que les valeurs de score soient plus sensibles aux
 modifications d'`eps` que de `min_samples`.
+
+Cependant, si on observe le nombre de clusters, on s'aperçoit que les clusterings avec les meilleurs scores sont aussi
+souvent ceux qui ont un nombre de clusters très faible. Cette observation est assez contre-intuitive car on s'attend en
+général à obtenir $\sqrt{n}$ clusters, ce qui pour notre cas correspondrait à $\sqrt{1916} \approx 44$. Par conséquent,
+il serait donc intéressant de vérifier les clusterings avec plus de clusters qui pourraient ainsi mieux séparer les
+données.
+
+On peut aussi noter la présence de clustering sans cluster (ou plutôt uniquement composé de bruit) lorsque les valeurs
+d'`eps` sont faibles et les valeurs de `min_samples` moyennement à élevé.
 """
 
 # %%
@@ -255,7 +291,7 @@ for eps in eps_list:
 """
 Pour tous les clusters nous avons choisi de ne pas afficher les bruits (données pour lesquelles la valeur du 
 cluster est égale à `-1`). En effet, bien qu'elles soient regroupées dans un même ensemble, ces données ne présentent 
-pas de caractéristiques commune mis à part d'être considérée différentes de toutes les autres données par `DBSCAN` 
+pas de caractéristiques communes mis à part d'être considérées différentes de toutes les autres données par `DBSCAN` 
 
 ### Analyse pour `eps=5`
 
@@ -275,23 +311,23 @@ que les clusters sont tous assez petits (6 photos pour le gros cluster).
 
 À partir de cette valeur d'`eps`, il semble que `DBSCAN` ait plus de mal à séparer les visages. En effet, bien qu'on
 puisse noter la présence de 4 petits clusters (avec 5 photos au maximum), on remarque aussi l'émergence d'un grand
-cluster (avec 256 photos). De plus, les petits clusters semble semble ne plus uniquement regrouper des personnes selon
+cluster (avec 256 photos). De plus, les petits clusters semblent ne plus uniquement regrouper des personnes selon
 l'orientation du visage mais aussi selon la personne (seul le dernier cluster est composé de deux personnalités
 différentes). A contrario le premier cluster regroupe beaucoup de personnalités différentes dans des orientations du
-visage différents et avec des traits de caractères (comme la présence de rides / cernes, la bouche ouverte...)
+visage différentes et avec des traits de caractères (comme la présence de rides / cernes, la bouche ouverte...)
 différents. On peut donc imaginer que la valeur d'`eps` est trop grande et induit de trop grand regroupement.
 
 ### Analyse pour `eps=9`
 
-Les résultats observé précédemment se confirme avec la présence ici d'un cluster encore plus grand (694 images) et d'un
-petit cluster (3 images) composé uniquement de la personnalité `Jiang Zemin` possédant des traits assez spécifique (en
-particulier de très grandes lunettes bien visible).
+Les résultats observés précédemment se confirment avec la présence ici d'un cluster encore plus grand (694 images) et
+d'un petit cluster (3 images) composé uniquement de la personnalité `Jiang Zemin` possédant des traits assez spécifiques
+(en particulier de très grandes lunettes bien visible).
 
 ### Analyse pour `eps=10`
 
 Légère amélioration ici des résultats avec 2 petits clusters (3 photos chacun) avec une orientation du visage
-intra-cluster similaire et avec le premier cluster composé de différentes personnalité. En revanche, nous notons aussi
-que le gros cluster a quasiement doublé de taille.
+intra-cluster similaire et avec le premier cluster composé de différentes personnalités. En revanche, nous notons aussi
+que le gros cluster a quasiment doublé de taille.
 
 ### Analyse pour `eps=11`, `eps=12`, `eps=13`, `eps=14` et `eps=15`
 
@@ -300,6 +336,7 @@ d'`eps`.
 
 ### Bilan
 
-Contrairement à ce que nous montrait le score de silhouette, les résultats que nous observons ici semblent nous indiquer
-que de nombreux petits clusters seraient préférables à de gros clusters avec le modèle `DBSCAN`.
+Contrairement à ce que nous montrait le score de silhouette et comme nous l'avions imaginé avec l'analyse du nombre de
+clusters, les résultats que nous observons ici semblent nous indiquer que de nombreux (même petits) clusters seraient
+préférables à de gros clusters avec le modèle `DBSCAN`.
 """
