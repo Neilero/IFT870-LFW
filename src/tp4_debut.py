@@ -293,7 +293,7 @@ Légère amélioration ici des résultats avec 2 petits clusters (3 photos chacu
 intra-cluster similaire et avec le premier cluster composé de différentes personnalité. En revanche, nous notons aussi
 que le gros cluster a quasiement doublé de taille.
 
-### Analyse pour `eps=11`, `eps=12`, `eps=13`, `eps=14`, `eps=15`
+### Analyse pour `eps=11`, `eps=12`, `eps=13`, `eps=14` et `eps=15`
 
 Pour toutes ces valeurs d'`eps`, nous n'avons désormais plus qu'un très gros cluster qui croit avec l'augmentation
 d'`eps`.
