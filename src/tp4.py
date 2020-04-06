@@ -95,10 +95,10 @@ résultat et donner vos conclusions.*
 
 # %%
 # https://www.geeksforgeeks.org/elbow-method-for-optimal-value-of-k-in-kmeans/
-Ks = range(40, 81, 5)
+k_list = range(40, 81, 5)
 mean_min_dists = []
 
-for k in tqdm(Ks, desc="Computing mean of min distances to closest centroid..."):
+for k in tqdm(k_list, desc="Computing mean of min distances to closest centroid..."):
     kmean = KMeans(n_clusters=k, n_jobs=-1, random_state=0)
     kmean.fit(X)
 
@@ -106,7 +106,7 @@ for k in tqdm(Ks, desc="Computing mean of min distances to closest centroid...")
     mean_min_dist = np.mean(np.min(distances, axis=1))
     mean_min_dists.append(mean_min_dist)
 
-plt.plot(Ks, mean_min_dists, 'bx-')
+plt.plot(k_list, mean_min_dists, 'bx-')
 plt.xlabel("Nombre de cluster K")
 plt.ylabel("Moyenne des distances")
 plt.title("Moyennes des distances des données à leur plus proche centre par rapport au nombre de cluster")
@@ -121,7 +121,7 @@ potentiel.
 Nous pouvons expliquer ces faibles résultats par la
 [malédiction de la dimensionnalité](https://fr.wikipedia.org/wiki/Fl%C3%A9au_de_la_dimension). En effet, on peut
 constater que lorsque le nombre de dimensions augmente la distance entre les points tend à s'uniformiser. Cela rend
-ainsi les calculs de distances moins performant, moins significatif.
+ainsi les calculs de distances moins performant et moins significatif.
 """
 
 # %%
@@ -135,7 +135,7 @@ résultat et donner vos conclusions.*
 # %%
 model = KMeans(n_jobs=-1, random_state=0)
 param_grid = {
-    "n_clusters": Ks
+    "n_clusters": k_list
 }
 
 # convert metric to scorer
@@ -147,7 +147,7 @@ best_kmean.fit(X, y)
 
 print(f"Best k fond : {best_kmean.best_params_['n_clusters']}")
 
-plt.plot(Ks, best_kmean.cv_results_["mean_test_score"], 'bx-')
+plt.plot(k_list, best_kmean.cv_results_["mean_test_score"], 'bx-')
 plt.xlabel("Nombre de cluster K")
 plt.ylabel("Moyenne des scores")
 plt.title("Moyennes des scores en fonction du nombre de cluster")
@@ -158,7 +158,7 @@ plt.show()
 Nous pouvons remarquer que, si on retire le paramètre `random_state`, les résultats changent à chaque exécution et ces
 résultats sont parfois oscillants, rendant la précision de la validation croisée douteuse.
 
-Nous pouvons aussi noter que les potentiels meilleurs clustering sont cette fois-ci obtenus pour des valeurs de
+Nous pouvons aussi noter que les potentiels meilleurs clusterings sont cette fois-ci obtenus pour des valeurs de
 `n_clusters` à 40, 60 et 80 (ce dernier étant d'après notre mesure de score le meilleur clustering). Là encore, une
 vérification manuelle de la sémantique des clusters formés serait nécessaire pour les évaluer plus précisément.
 
@@ -239,8 +239,9 @@ général à obtenir $\sqrt{n}$ clusters, ce qui pour notre cas correspondrait �
 il serait donc intéressant de vérifier les clusterings avec plus de clusters qui pourraient ainsi mieux séparer les
 données.
 
-On peut aussi noter la présence de clustering sans cluster (ou plutôt uniquement composé de bruit) lorsque les valeurs
-d'`eps` sont faibles et les valeurs de `min_samples` moyennement à élevé.
+On peut aussi noter la présence de clusterings sans cluster (ou plutôt uniquement composés de bruit) lorsque les valeurs
+d'`eps` sont faibles et les valeurs de `min_samples` moyennes à élevées. Ces résultats permettent de démontrer que la
+plupart des points sont assez éloignés les uns des autres et qu'il n'existe pas de groupe concentré d'observation.
 """
 
 # %%
@@ -264,24 +265,24 @@ def show_cluster_samples(data, X, y, eps):
 
     image_count = 5
 
-    for i, (cluster, clusterData) in enumerate(data.groupby("cluster")):
+    for cluster, clusterData in data.groupby("cluster"):
         if cluster == -1:
             continue
 
         fig, axes = plt.subplots(ncols=image_count, figsize=(10, 3), subplot_kw={'xticks': (), 'yticks': ()})
-        fig.suptitle(f"Échantillon d'images du cluster {cluster} (taille réel : {clusterData.shape[0]})", fontsize=16)
+        fig.suptitle(f"Échantillon d'images du cluster {cluster} (taille réelle : {clusterData.shape[0]})", fontsize=16)
 
         if cluster == 0:
             fig.text(0.5, 1, f"Clusters pour eps={eps}", horizontalalignment='center', fontsize=20)
 
-        for j in range(image_count):
-            if j >= clusterData.shape[0]:
-                axes[j].set_visible(False)
+        for image in range(image_count):
+            if image >= clusterData.shape[0]:
+                axes[image].set_visible(False)
                 continue
 
-            row_index = clusterData.index[j]
-            axes[j].imshow(faces.images[row_index])
-            axes[j].set_title(faces.target_names[clusterData["target"][row_index]])
+            row_index = clusterData.index[image]
+            axes[image].imshow(faces.images[row_index])
+            axes[image].set_title(faces.target_names[clusterData["target"][row_index]])
 
 
 for eps in eps_list:
@@ -338,5 +339,5 @@ d'`eps`.
 
 Contrairement à ce que nous montrait le score de silhouette et comme nous l'avions imaginé avec l'analyse du nombre de
 clusters, les résultats que nous observons ici semblent nous indiquer que de nombreux (même petits) clusters seraient
-préférables à de gros clusters avec le modèle `DBSCAN`.
+préférables à un gros cluster avec le modèle `DBSCAN`.
 """
